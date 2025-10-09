@@ -324,10 +324,6 @@ $user->hasRole('admin', $org2);  // false
 $user->hasRole('member', $org2); // true
 ```
 
-## License
-
-This package is open-sourced software licensed under the [MIT license](LICENSE).
-
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/ssntpl/permissions/issues)
