@@ -33,7 +33,7 @@
             "homepage": "https://ssntpl.com"
         }
     ],
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
         "php": "*",
