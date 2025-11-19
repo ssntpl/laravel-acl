@@ -1,522 +1,198 @@
-# SSNTPL Permissions
+# Laravel ACL
 
-A Laravel package for managing dynamic roles and permissions on resources.
-
-## Description
-
-SSNTPL Permissions is a Laravel package that provides a flexible role and permission system with support for resource-specific roles. It allows you to assign roles to users on specific resources (like projects, organizations, etc.) or globally.
+Laravel ACL is a framework-agnostic access control layer for Laravel 10/11/12 projects. It provides global and resource-scoped roles, explicit ALLOW/DENY permissions, permission implication trees, and cache-friendly lookups that plug straight into your existing Eloquent models through a reusable trait.
 
 ## Features
 
-- ✅ Dynamic role creation and management
-- ✅ Permission-based access control
-- ✅ Resource-specific roles (roles can be scoped to specific resources)
-- ✅ Global roles (roles without resource scope)
-- ✅ Artisan commands for role and permission management
-- ✅ Trait-based integration with Eloquent models
-- ✅ HTTP middleware for route protection
-- ✅ Configurable role behavior
+- Global or resource-scoped role assignments stored via polymorphic pivots.
+- Permission inheritance (parent → child) with cached graph traversal.
+- Explicit ALLOW/DENY effects per role-permission pair layered on top of implied permissions.
+- Role assignment expirations and helper trait (`HasRoles`) for Eloquent subjects.
+- Cache invalidation hooks plus an `acl:cache-reset` artisan command.
+- First-class artisan tooling for creating permissions, roles, and assignments.
+- HTTP middleware for checking global roles or permissions in routes/controllers.
+
+## Requirements
+
+- PHP ^8.0
+- Laravel framework ^10.0 | ^11.0 | ^12.0
 
 ## Installation
 
-Install the package via Composer:
-
 ```bash
-composer require ssntpl/permissions
+composer require ssntpl/laravel-acl
 ```
 
-### Publish Configuration and Migrations
+1. (Optional) Publish the config and migrations:
+   ```bash
+   php artisan vendor:publish --tag=acl-config
+   php artisan vendor:publish --tag=acl-migrations
+   ```
+2. Run the migrations:
+   ```bash
+   php artisan migrate
+   ```
 
-Publish the configuration file:
-
-```bash
-php artisan vendor:publish --tag=permissions-config
-```
-
-Publish the migrations:
-
-```bash
-php artisan vendor:publish --tag=permissions-migrations
-```
-
-Run the migrations:
-
-```bash
-php artisan migrate
-```
-
-## Configuration
-
-The configuration file `config/permissions.php` contains:
+## Configuration (`config/acl.php`)
 
 ```php
 return [
-    'role_on_resource' => true,  // Enable resource-specific roles
-    'user_model' => "App\\Models\\User"  // Your user model
+    'cache_ttl' => env('ACL_CACHE_TTL', 86400),
 ];
 ```
 
-### Configuration Options
+- `cache_ttl` – lifetime (seconds) for cached permission trees and role lookups.
 
-- `role_on_resource`: When `true`, roles are scoped to specific resources. When `false`, roles are global.
-- `user_model`: The user model class that will use roles.
+## Database schema
+
+Publishing the migration adds:
+
+| Table | Key columns | Purpose |
+| --- | --- | --- |
+| `acl_roles` | `name`, `resource_type`, `description` | Defines each role; `resource_type` is `null` for global roles. |
+| `acl_permissions` | `name`, `resource_type` | Defines permissions; names are unique. |
+| `acl_role_permissions` | `role_id`, `permission_id`, `effect` | Pivot with ALLOW/DENY effect per permission. |
+| `acl_role_assignments` | `subject_type`, `subject_id`, `role_id`, optional `resource_*`, `expires_at` | Links a subject (e.g., user) to a role, optionally scoped to a resource, with expiration support. |
+| `acl_permissions_implications` | `parent_permission_id`, `child_permission_id` | Models permission implication trees (grant parent ⇒ grant child). |
 
 ## Usage
 
-### 1. Add the HasRoles Trait
-
-Add the `HasRoles` trait to your User model (or any model that needs roles):
+### 1. Add `HasRoles` to the authenticatable model
 
 ```php
-<?php
-
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Ssntpl\Permissions\Traits\HasRoles;
+use Ssntpl\LaravelAcl\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     use HasRoles;
-    
-    // ... rest of your model
 }
 ```
 
-### 2. Creating Roles and Permissions
+### 2. Create permissions
 
-#### Using Artisan Commands
-
-Create a permission:
+Interactive artisan flow:
 
 ```bash
-php artisan permissions:create-permission "manage users"
+php artisan acl:create-permission articles.publish "App\\Models\\Project" --implied="articles.read,articles.list"
 ```
 
-Create a role with permissions:
-
-```bash
-php artisan permissions:create-role "admin" "App\\Models\\Project" "create|read|update|delete"
-```
-
-#### Programmatically
+Programmatically:
 
 ```php
-use Ssntpl\Permissions\Models\Role;
-use Ssntpl\Permissions\Models\Permission;
+use Ssntpl\LaravelAcl\Models\Permission;
 
-// Create permissions
-$createPermission = Permission::create(['name' => 'create']);
-$readPermission = Permission::create(['name' => 'read']);
+$publish = Permission::create(['name' => 'articles.publish']);
+$read = Permission::firstOrCreate(['name' => 'articles.read']);
+$publish->children()->attach($read); // Publish implies read
+```
 
-// Create a role
-$adminRole = Role::create([
+### 3. Create roles and attach permissions
+
+```bash
+php artisan acl:create-role admin "App\\Models\\Project" "articles.read|articles.publish|comments.moderate"
+```
+
+In PHP you can use either `syncPermissions()` (implicit ALLOW) or `syncPermissionsWithEffect()`:
+
+```php
+use Ssntpl\LaravelAcl\Models\Role;
+
+$role = Role::firstOrCreate([
     'name' => 'admin',
-    'resource_type' => 'App\\Models\\Project'
+    'resource_type' => App\Models\Project::class,
 ]);
 
-// Assign permissions to role
-$adminRole->syncPermissions(collect([$createPermission, $readPermission]));
-```
-
-### 3. Assigning Roles to Users
-
-#### Resource-Specific Roles
-
-```php
-$user = User::find(1);
-$project = Project::find(1);
-
-// Assign role to user for specific resource
-$user->assignRole('admin', $project);
-
-// Or using role object
-$adminRole = Role::where('name', 'admin')->first();
-$user->assignRole($adminRole, $project);
-```
-
-#### Global Roles (when role_on_resource is false)
-
-```php
-$user = User::find(1);
-
-// Assign global role
-$user->assignRole('admin');
-```
-
-### 4. Checking Roles and Permissions
-
-#### Check if user has specific role
-
-```php
-$user = User::find(1);
-$project = Project::find(1);
-
-// Check role on specific resource
-if ($user->hasRole('admin', $project)) {
-    // User is admin of this project
-}
-
-// Check global role (when role_on_resource is false)
-if ($user->hasRole('admin')) {
-    // User has global admin role
-}
-```
-
-#### Check if user has any of multiple roles
-
-```php
-// Check multiple roles (OR condition)
-if ($user->hasAnyRole(['admin', 'manager'], $project)) {
-    // User is either admin or manager of this project
-}
-
-// Using pipe-separated string
-if ($user->hasAnyRole('admin|manager', $project)) {
-    // Same as above
-}
-```
-
-#### Get user's role name
-
-```php
-$roleName = $user->getRoleName($project);
-// Returns: 'admin', 'manager', etc., or empty string if no role
-```
-
-### 5. Managing Roles
-
-#### Remove role from user
-
-```php
-$user->removeRole($project);  // Remove role for specific resource
-$user->removeRole();          // Remove global role
-```
-
-#### Get available roles for a resource type
-
-```php
-$user = User::find(1);
-$availableRoles = $user->roles(); // Returns roles for user's class
-```
-
-## Database Schema
-
-The package creates four tables:
-
-### `roles`
-- `id` - Primary key
-- `name` - Role name
-- `resource_type` - Model class name (nullable for global roles)
-- `timestamps`
-- Unique constraint on `[name, resource_type]`
-
-### `permissions`
-- `id` - Primary key
-- `name` - Permission name (unique)
-- `timestamps`
-
-### `role_has_permissions`
-- `role_id` - Foreign key to roles table
-- `permission_id` - Foreign key to permissions table
-- Unique constraint on `[role_id, permission_id]`
-
-### `model_resource_roles`
-- `role_id` - Foreign key to roles table
-- `model_id` - ID of the model (user)
-- `model_type` - Model class name
-- `resource_id` - ID of the resource (nullable for global roles)
-- `resource_type` - Resource class name (nullable for global roles)
-
-## API Reference
-
-### HasRoles Trait Methods
-
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `assignRole($role, $resource = null)` | Role name/object, Resource model | Assign role to user |
-| `removeRole($resource = null)` | Resource model | Remove role from user |
-| `hasRole($role, $resource = null)` | Role name/object, Resource model | Check if user has role |
-| `hasAnyRole($roles, $resource = null)` | Array/string of roles, Resource model | Check if user has any of the roles |
-| `getRoleName($resource = null)` | Resource model | Get user's role name |
-| `roles()` | None | Get available roles for user's class |
-| `role($resource = null)` | Resource model | Get user's role relationship |
-
-### Role Model Methods
-
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `syncPermissions($permissions)` | Collection of permissions | Sync permissions to role |
-| `findResource($resourceType, $id)` | Class name, ID | Find resource by type and ID |
-
-## Artisan Commands
-
-### Create Permission
-
-```bash
-php artisan permissions:create-permission {name}
-```
-
-**Arguments:**
-- `name` - The name of the permission
-
-**Interactive Mode:**
-Run without arguments to use interactive prompts:
-```bash
-php artisan permissions:create-permission
-```
-
-### Create Role
-
-```bash
-php artisan permissions:create-role {name} {resource_type} {permissions}
-```
-
-**Arguments:**
-- `name` - The name of the role
-- `resource_type` - Type of the resource (model class)
-- `permissions` - Pipe-separated list of permissions (e.g., "create|read|update")
-
-**Interactive Mode:**
-Run without arguments to use interactive prompts:
-```bash
-php artisan permissions:create-role
-```
-
-## Examples
-
-### Example 1: Project Management System
-
-```php
-// Create roles and permissions for project management
-$project = Project::find(1);
-$user = User::find(1);
-
-// Assign user as project admin
-$user->assignRole('admin', $project);
-
-// Check permissions
-if ($user->hasRole('admin', $project)) {
-    // User can manage this project
-}
-
-// Check multiple roles
-if ($user->hasAnyRole(['admin', 'manager'], $project)) {
-    // User has management access to this project
-}
-```
-
-### Example 2: Organization Roles
-
-```php
-// Different roles for different organizations
-$org1 = Organization::find(1);
-$org2 = Organization::find(2);
-$user = User::find(1);
-
-// User can be admin in one org and member in another
-$user->assignRole('admin', $org1);
-$user->assignRole('member', $org2);
-
-// Check roles
-$user->hasRole('admin', $org1);  // true
-$user->hasRole('admin', $org2);  // false
-$user->hasRole('member', $org2); // true
-```
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/ssntpl/permissions/issues)
-- **Source**: [GitHub Repository](https://github.com/ssntpl/permissions)
-
-## Author
-
-**Abhishek Sharma**
-- Email: abhishek.sharma@ssntpl.in
-- Website: [https://ssntpl.com](https://ssntpl.com)
-
-## HTTP Middleware
-
-The package provides three middleware classes for route protection:
-
-### 1. Role Middleware
-
-Protects routes based on user roles:
-
-```php
-// Register in app/Http/Kernel.php
-protected $middlewareAliases = [
-    'role' => \Ssntpl\Permissions\Http\Middleware\RoleMiddleware::class,
-];
-
-// Usage in routes
-Route::get('/admin', function () {
-    // Only users with 'admin' role can access
-})->middleware('role:admin,App\\Models\\Project');
-
-// Multiple roles (OR condition)
-Route::get('/management', function () {
-    // Users with 'admin' OR 'manager' role can access
-})->middleware('role:admin|manager,App\\Models\\Project');
-```
-
-### 2. Permission Middleware
-
-Protects routes based on user permissions:
-
-```php
-// Register in app/Http/Kernel.php
-protected $middlewareAliases = [
-    'permission' => \Ssntpl\Permissions\Http\Middleware\PermissionMiddleware::class,
-];
-
-// Usage in routes
-Route::post('/projects', function () {
-    // Only users with 'create' permission can access
-})->middleware('permission:create,App\\Models\\Project');
-
-// Multiple permissions (OR condition)
-Route::get('/projects', function () {
-    // Users with 'read' OR 'list' permission can access
-})->middleware('permission:read|list,App\\Models\\Project');
-```
-
-### 3. Role or Permission Middleware
-
-Protects routes based on either roles OR permissions:
-
-```php
-// Register in app/Http/Kernel.php
-protected $middlewareAliases = [
-    'role_or_permission' => \Ssntpl\Permissions\Http\Middleware\RoleOrPermissionMiddleware::class,
-];
-
-// Usage in routes
-Route::delete('/projects/{id}', function () {
-    // Users with 'admin' role OR 'delete' permission can access
-})->middleware('role_or_permission:admin|delete,App\\Models\\Project');
-```
-
-### Middleware Parameters
-
-All middleware accept these parameters:
-1. **Role/Permission/Mixed** - Role names, permission names, or both (pipe-separated)
-2. **Resource Type** - Fully qualified class name of the resource model
-
-**Note:** The middleware expects `resource_id` in the request for resource-specific roles.
-
-## Configuration Modes
-
-### Resource-Specific Roles (`role_on_resource: true`)
-
-Roles are scoped to specific resources. Users can have different roles for different resources:
-
-```php
-$user->assignRole('admin', $project1);  // Admin of project1
-$user->assignRole('member', $project2); // Member of project2
-
-$user->hasRole('admin', $project1);  // true
-$user->hasRole('admin', $project2);  // false
-```
-
-### Global Roles (`role_on_resource: false`)
-
-Roles are global across the application. Users have one role system-wide:
-
-```php
-$user->assignRole('admin');  // Global admin
-
-$user->hasRole('admin');  // true (anywhere in the app)
-```
-
-## Advanced Usage
-
-### Working with Permissions
-
-```php
-use Ssntpl\Permissions\Models\Role;
-use Ssntpl\Permissions\Models\Permission;
-
-// Create permissions
-$createPerm = Permission::create(['name' => 'create']);
-$readPerm = Permission::create(['name' => 'read']);
-$updatePerm = Permission::create(['name' => 'update']);
-$deletePerm = Permission::create(['name' => 'delete']);
-
-// Create role with permissions
-$adminRole = Role::create([
-    'name' => 'admin',
-    'resource_type' => 'App\\Models\\Project'
+$role->syncPermissionsWithEffect([
+    $publish->id => 'ALLOW',
+    $read->id => 'ALLOW',
 ]);
-
-// Sync permissions to role
-$adminRole->syncPermissions(collect([
-    $createPerm, $readPerm, $updatePerm, $deletePerm
-]));
 ```
 
-### Checking Permissions
+### 4. Assign roles
+
+Using the trait:
 
 ```php
-// Get user's role for a resource
-$userRole = $user->role($project)->first();
+$user = User::find(1);
+$project = Project::find(42);
 
-// Check if role has specific permission
-if ($userRole && $userRole->role->permissions()->where('name', 'create')->exists()) {
-    // User can create
+$user->assignRole('admin', $project);                    // scoped role
+$user->assignRole('super-admin', null, now()->addMonth()); // global role with expiration
+```
+
+Using the command (handy for ops/support teams):
+
+```bash
+php artisan acl:assign-role admin App\\Models\\User:1 App\\Models\\Project:42 --expires-at="2025-12-31 23:59:59"
+```
+
+### 5. Check roles & permissions
+
+```php
+if ($user->hasRole('admin', $project)) {
+    // subject is an admin of this project
 }
 
-// Get all permissions for user's role
-$permissions = $userRole?->role?->permissions ?? collect();
-```
+$role = $user->getRole(); // global role assignment (resource = null)
 
-### Dynamic Resource Finding
-
-```php
-use Ssntpl\Permissions\Models\Role;
-
-// Find resource dynamically
-$project = Role::findResource('App\\Models\\Project', 1);
-
-if ($project) {
-    $user->assignRole('admin', $project);
-}
-```
-
-## Error Handling
-
-The package provides proper error handling:
-
-```php
-try {
-    $user->assignRole('admin', $project);
-} catch (Exception $e) {
-    // Handle role assignment errors
-    Log::error('Role assignment failed: ' . $e->getMessage());
+if ($role && $role->can('articles.publish')) {
+    // allowed via direct or implied permission (and not explicitly denied)
 }
 ```
 
-## Security Considerations
+`removeRole($resource = null)` deletes an assignment, and calling `getRole($resource)` returns the underlying `Role` model instance if one exists and is not expired.
 
-1. **Input Validation**: Always validate role and permission names
-2. **Resource Ownership**: Verify resource ownership before role operations
-3. **Middleware Order**: Place authentication middleware before permission middleware
-4. **SQL Injection**: The package uses Eloquent ORM to prevent SQL injection
+## HTTP middleware
 
-## Performance Tips
+Register the middleware aliases in `app/Http/Kernel.php`:
 
-1. **Eager Loading**: Load roles with permissions to reduce queries
 ```php
-$user->load('modelRoles.role.permissions');
+protected $middlewareAliases = [
+    'check_global_role' => \Ssntpl\LaravelAcl\Http\Middleware\CheckGlobalRole::class,
+    'check_global_permission' => \Ssntpl\LaravelAcl\Http\Middleware\CheckGlobalPermission::class,
+];
 ```
 
-2. **Caching**: Cache frequently accessed roles and permissions
+Usage:
+
 ```php
-$userRoles = Cache::remember("user.{$user->id}.roles", 3600, function () use ($user) {
-    return $user->modelRoles()->with('role.permissions')->get();
-});
+Route::get('/admin', fn () => 'ok')->middleware('check_global_role:admin|manager');
+Route::post('/articles', fn () => 'ok')->middleware('check_global_permission:articles.publish|articles.create');
 ```
 
-## Contributing
+Both middleware assume global assignments (resource is `null`) when evaluating the authenticated subject.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+> The authenticated guard’s model must use the `HasRoles` trait (or at least expose compatible `hasRole`/`getRole` methods) because the middleware works directly with `Auth::user()` without re-querying the database.
+
+## Caching & invalidation
+
+Role permissions and implied permission trees are cached per record using the configured TTL. Cache invalidation happens automatically when:
+
+- Permissions are created, updated, deleted, or their implication edges change.
+- Roles are updated or their pivot records change.
+- The `acl:cache-reset` command is executed.
+
+Run a full reset manually with:
+
+```bash
+php artisan acl:cache-reset
+```
+
+## Artisan command reference
+
+| Command | Description |
+| --- | --- |
+| `acl:create-permission` | Create/update a permission and optionally attach implied permissions (supports interactive prompts). |
+| `acl:create-role` | Create a role and assign permissions in one step. |
+| `acl:assign-role` | Attach a role to a subject/resource pair with optional expiration. |
+| `acl:cache-reset` | Flush cached permissions and role lookups. |
+
+## Support & contributing
+
+- Issues: [https://github.com/ssntpl/laravel-acl/issues](https://github.com/ssntpl/laravel-acl/issues)
+- Source: [https://github.com/ssntpl/laravel-acl](https://github.com/ssntpl/laravel-acl)
+
+PRs are welcome. Please include reproduction steps or tests when reporting/patching bugs.
