@@ -4,7 +4,7 @@
     "description": "Laravel ACL package.",
     "keywords": ["laravel", "ssntpl", "acl", "access control list", "role based access control", "rbac", "permissions", "roles"],
     "homepage": "https://github.com/ssntpl/laravel-acl",
-    "license": "",
+    "license": "MIT",
     "support": {
         "issues": "https://github.com/ssntpl/laravel-acl/issues",
         "source": "https://github.com/ssntpl/laravel-acl"
