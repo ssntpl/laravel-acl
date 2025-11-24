@@ -51,12 +51,12 @@ trait HasRoles
     {
         if (is_numeric($role)) {
             $role = Role::find($role);
-        } else {
+        } else if (is_string($role)) {
             $role = Role::where('name', $role);
             $role = $resource ? $role->where('resource_type', get_class($resource))->first() : $role->first();
         }
 
-        if (!$role) {
+        if (!$role || !($role instanceof Role)) {
             throw new \InvalidArgumentException("Role not found");
         }
 

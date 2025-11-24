@@ -11,6 +11,8 @@ use InvalidArgumentException;
 class Role extends Model
 {
     protected $table = 'acl_roles';
+    
+    public $timestamps = false;
 
     protected $fillable = [
         'name',
