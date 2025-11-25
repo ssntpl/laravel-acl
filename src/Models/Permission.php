@@ -10,6 +10,8 @@ use Ssntpl\LaravelAcl\Models\Role;
 class Permission extends Model
 {
     protected $table = 'acl_permissions';
+    
+    public $timestamps = false;
 
     protected $fillable = [
         'name',
