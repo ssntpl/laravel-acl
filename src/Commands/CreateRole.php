@@ -1,19 +1,20 @@
 <?php
 
-namespace Ssntpl\Permissions\Commands;
+namespace Ssntpl\LaravelAcl\Commands;
 
 use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\PromptsForMissingInput;
-use Ssntpl\Permissions\Models\Permission;
-use Ssntpl\Permissions\Models\Role;
+use Ssntpl\LaravelAcl\Models\Permission;
+use Ssntpl\LaravelAcl\Models\Role;
 use function Laravel\Prompts\text;
 
 class CreateRole extends Command implements PromptsForMissingInput
 {
-    protected $signature = 'permissions:create-role     {name : The name of the permission}
-                                                        {resource_type : Type of the resource}
-                                                        {permissions : A list of permissions to assign to the role, separated by | }';
+    protected $signature = 'acl:create-role     
+        {name : The name of the permission}
+        {resource_type? : Type of the resource}
+        {permissions? : A list of permissions to assign to the role, separated by | }';
 
     protected $description = 'Create a role';
 

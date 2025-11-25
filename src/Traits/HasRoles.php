@@ -1,60 +1,87 @@
 <?php
 
-namespace Ssntpl\Permissions\Traits;
+namespace Ssntpl\LaravelAcl\Traits;
 
-use Ssntpl\Permissions\Models\ModelResourceRole;
-use Ssntpl\Permissions\Models\Role;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Ssntpl\LaravelAcl\Models\Role;
+use Ssntpl\LaravelAcl\Models\RoleAssignment;
 
 trait HasRoles
 {
-    public function roles()
+    /**
+     * Get all role assignments for this model
+     */
+    public function roles(): MorphMany
     {
-        return Role::where('resource_type', get_class($this))->get();
+        return $this->morphMany(RoleAssignment::class, 'subject');
     }
 
-    public function modelRoles()
+    public function role($resource = null): MorphOne
     {
-        return $this->morphMany(ModelResourceRole::class, 'model');
-    }
-
-    public function role($resource = null)
-    {
-        if (config('permissions.role_on_resource')) {
-            return $this->morphOne(ModelResourceRole::class, 'model')
-                ->where('resource_id', $resource->id)
-                ->where('resource_type', get_class($resource))
-                ->with('role');
-        } else {
-            return $this->morphOne(ModelResourceRole::class, 'model')
-                ->with('role');
+        $resourceId = null;
+        $resourceType = null;
+        if ($resource) {
+            $resourceId = $resource->id;
+            $resourceType = get_class($resource);
         }
+        
+        return $this->morphOne(RoleAssignment::class, 'subject')
+            ->where('resource_id', $resourceId)
+            ->where('resource_type', $resourceType)
+            ->with('role');
     }
 
-    public function assignRole($role, $resource = null)
+    public function getRole($resource = null): ?Role
     {
-        if (is_string($role)) {
+        $assignment = $this->roles()
+            ->where('resource_id', optional($resource)->id)
+            ->where('resource_type', $resource ? get_class($resource) : null)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->with('role')
+            ->first();
+
+        return $assignment?->role;
+    }
+
+
+    public function assignRole($role, $resource = null, $expiresAt = null)
+    {
+        if (is_numeric($role)) {
+            $role = Role::find($role);
+        } else if (is_string($role)) {
             $role = Role::where('name', $role);
-            $role = config('permissions.role_on_resource') ? $role->where('resource_type', get_class($resource))->first() : $role->first();
+            $role = $resource ? $role->where('resource_type', get_class($resource))->first() : $role->first();
         }
 
-        $currentRole = $this->role($resource);
-        if ($currentRole->first()) {
-            $currentRole = $currentRole->update(['role_id' => $role->id]);
+        if (!$role || !($role instanceof Role)) {
+            throw new \InvalidArgumentException("Role not found");
+        }
+
+        $data = [
+            'role_id' => $role->id,
+        ];
+        
+        if ($expiresAt) {
+            $data['expires_at'] = $expiresAt;
+        }
+
+        $currentRole = $this->role($resource)->first();
+        
+        if ($currentRole) {
+            $currentRole->update($data);
+            return $currentRole->fresh();
         } else {
-            if (config('permissions.role_on_resource')) {
-                $currentRole = $this->modelRoles()->create([
-                    'role_id' => $role->id,
-                    'resource_id' => $resource->id,
-                    'resource_type' => get_class($resource)
-                ]);
-            } else {
-                $currentRole = $this->modelRoles()->create([
-                    'role_id' => $role->id,
-                ]);
-            }
-        }
 
-        return $currentRole;
+            if ($resource) {
+                $data['resource_id'] = $resource->id;
+                $data['resource_type'] = get_class($resource);
+            }
+
+            return $this->roles()->create($data);
+        }
     }
 
     public function removeRole($resource = null)
@@ -62,44 +89,20 @@ trait HasRoles
         return $this->role($resource)->delete();
     }
 
-    public function hasRole($role, $resource = null): bool
+    public function hasRole($roles, $resource = null): bool
     {
-        $resource = $resource instanceof \Illuminate\Database\Eloquent\Collection 
-            ? $resource->first()
-            : $resource;
+        $currentRole = $this->getRole($resource);
 
-        if (is_string($role)) {
-            $role = Role::where('name', $role);
-            $role = config('permissions.role_on_resource') ? $role->where('resource_type', get_class($resource))->first() : $role->first();
-        }
-        if (!$role) {
+        if (!$currentRole) {
             return false;
         }
-        if ($this->role($resource)->first()?->role?->id == $role->id) {
+
+        $roles = is_array($roles) ? $roles : [$roles];
+
+        if (in_array($currentRole->id, $roles) || in_array($currentRole->name, $roles)) {
             return true;
         }
-        return false;
-    }
-   
-    public function hasAnyRole($roles, $resource = null): bool
-    {
-        $roleNames = is_string($roles) ? explode('|', $roles) : (array) $roles;
-        
-        $resource = $resource instanceof \Illuminate\Database\Eloquent\Collection 
-            ? $resource->first()
-            : $resource;    
-        
-        foreach ($roleNames as $roleName) {
-            if ($this->hasRole(trim($roleName), $resource)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
 
-    public function getRoleName($resource = null)
-    {
-        return $this->role($resource)->first()?->role?->name ?? '';
+        return false;
     }
 }

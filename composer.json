@@ -1,42 +1,36 @@
 {
-    "name": "ssntpl/permissions",
+    "name": "ssntpl/laravel-acl",
     "type": "library",
-    "description": "Laravel Role and permissions on resources.",
-    "keywords": [
-        "laravel", 
-        "ssntpl", 
-        "permissions", 
-        "role"
-    ],
-    "homepage": "https://github.com/ssntpl/permissions",
-    "license": "",
+    "description": "Laravel ACL package.",
+    "keywords": ["laravel", "ssntpl", "acl", "access control list", "role based access control", "rbac", "permissions", "roles"],
+    "homepage": "https://github.com/ssntpl/laravel-acl",
+    "license": "MIT",
     "support": {
-        "issues": "https://github.com/ssntpl/permissions/issues",
-        "source": "https://github.com/ssntpl/permissions"
+        "issues": "https://github.com/ssntpl/laravel-acl/issues",
+        "source": "https://github.com/ssntpl/laravel-acl"
     },
     "autoload": {
         "psr-4": {
-            "Ssntpl\\Permissions\\": "src/"
+            "Ssntpl\\LaravelAcl\\": "src/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Ssntpl\\Permissions\\PermissionsServiceProvider"
+                "Ssntpl\\LaravelAcl\\AclServiceProvider"
             ]
         }
     },
     "authors": [
         {
             "name": "Abhishek Sharma",
-            "email": "abhishek.sharma@ssntpl.in",
             "homepage": "https://ssntpl.com"
         }
     ],
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
-        "php": "*",
-        "laravel/framework": "*"
+        "php": "^8.0",
+        "laravel/framework": "^10.0|^11.0|^12.0"
     }
 }
