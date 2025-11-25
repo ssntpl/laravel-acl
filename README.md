@@ -76,7 +76,7 @@ class User extends Authenticatable
 Interactive artisan flow:
 
 ```bash
-php artisan acl:create-permission articles.publish "App\\Models\\Project" --implied="articles.read,articles.list"
+php artisan acl:create-permission articles.publish "App\\Models\\Project" --implied="articles.read|articles.list"
 ```
 
 Programmatically:

@@ -14,7 +14,7 @@ class CreatePermission extends Command implements PromptsForMissingInput
     protected $signature = 'acl:create-permission  
         {permission : The ID or name of the permission update or create}
         {resource_type? : The resource type of the permission (e.g. App\\Models\\Team) - only used when creating}
-        {--implied= : Comma-separated list of implied permission names or ids}';
+        {--implied= : A list of implied permission names or ids separated by |}';
 
     protected $description = 'Create or update a permission (only implied permissions can be updated)';
 
@@ -94,7 +94,7 @@ class CreatePermission extends Command implements PromptsForMissingInput
         $impliedOption = $this->option('implied');
         
         if ($impliedOption) {
-            return array_map('trim', explode(',', $impliedOption));
+            return array_map('trim', explode('|', $impliedOption));
         }
 
         // If not provided via option, prompt the user

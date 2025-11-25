@@ -79,12 +79,7 @@ class AssignRole extends Command
         }
 
         // Parse role input to check if it contains resource_type
-        if (is_numeric($roleInput)) {
-            $role = Role::find($roleInput);
-        } else {
-            // If the role is a name, we need to check if it is a global role or a resource-specific role
-            $role = Role::where('name', $roleInput)->where('resource_type', $resourceType)->first();
-        }
+        $role = Role::resolve($roleInput, $resourceType);
 
         if (!$role || $role->resource_type !== $resourceType) {
             $this->error("Role '{$roleInput}' not found or does not match the resource type" . ($resourceType ? " '{$resourceType}'." : " 'global'."));
