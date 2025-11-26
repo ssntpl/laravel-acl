@@ -35,6 +35,7 @@ return new class extends Migration
         });
         
         Schema::create('acl_role_assignments', function (Blueprint $table) {
+            $table->id();
             $table->morphs('subject');  // user, group, etc.
             $table->foreignId('role_id')->constrained('acl_roles')->onDelete('restrict')->onUpdate('cascade');
             $table->nullableMorphs('resource');  // team, board, project, etc.
