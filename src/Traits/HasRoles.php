@@ -49,14 +49,8 @@ trait HasRoles
 
     public function assignRole($role, $resource = null, $expiresAt = null)
     {
-        if (is_numeric($role)) {
-            $role = Role::find($role);
-        } else if (is_string($role)) {
-            $role = Role::where('name', $role);
-            $role = $resource ? $role->where('resource_type', get_class($resource))->first() : $role->first();
-        }
-
-        if (!$role || !($role instanceof Role)) {
+        $role = Role::resolve($role, $resource ? get_class($resource) : null);
+        if (!$role) {
             throw new \InvalidArgumentException("Role not found");
         }
 

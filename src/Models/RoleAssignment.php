@@ -11,10 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 class RoleAssignment extends Model
 {
     protected $table = 'acl_role_assignments';
-    
-    public $incrementing = false;
 
-    protected $primaryKey = null;
     
     public $timestamps = true;
     
