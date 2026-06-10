@@ -1,7 +1,6 @@
 {
     "name": "ssntpl/laravel-acl",
     "type": "library",
-    "version": "0.2.0",
     "description": "Laravel ACL package.",
     "keywords": ["laravel", "ssntpl", "acl", "access control list", "role based access control", "rbac", "permissions", "roles"],
     "homepage": "https://github.com/ssntpl/laravel-acl",
